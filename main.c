@@ -293,12 +293,12 @@ static void read_file_comments(wchar_t const *filename, comment_display comment_
         comment_count count = show_line_number ? read_comments_and_line(file_buffer, comment_mode) : read_comments(file_buffer, comment_mode);
         if (display_comment_count) {
             if (comment_mode & CC_COMMENT_DISPLAY) {
-                WriteFile(L"stdout", stdout, "c++ style comments: ", 20, 0, 0);
+                WriteFile(L"stdout", stdout, "c++ style comments: ", 20, NULL, NULL);
                 output_number(count.cc_comment_count);
             }
 
             if (comment_mode & C_COMMENT_DISPLAY) {
-                WriteFile(L"stdout", stdout, "\r\nc style comments: ", 20, 0, 0);
+                WriteFile(L"stdout", stdout, "\r\nc style comments: ", 20, NULL, NULL);
                 output_number(count.c_comment_count);
             }
         }
