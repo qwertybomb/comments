@@ -22,7 +22,9 @@ typedef enum comment_display
     NO_COMMENT_DISPLAY = 0x0,
     C_COMMENT_DISPLAY = 0x1,
     CC_COMMENT_DISPLAY = 0x2,
-    ALL_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY
+    ASM_COMMENT_DISPLAY = 0x4,
+    DEFAULT_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY,
+    ALL_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY | ASM_COMMENT_DISPLAY
 } comment_display;
 
 typedef struct comment_count
@@ -32,6 +34,9 @@ typedef struct comment_count
 
     /* c++ comment count */
     size_t cc_comment_count;
+
+    /* asm comment count */
+    size_t asm_comment_count;
 } comment_count;
 
 static void output_number(size_t number)
@@ -110,56 +115,54 @@ static comment_count read_comments(char const *str, comment_display comment_mode
                 ++str;
                 switch (*str) {
                     case '/':
-                        ++result.cc_comment_count;
                         if (comment_mode & CC_COMMENT_DISPLAY) {
-                            /* add space before comment*/
-                            do {
-                                WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
-                            } while(bytes_since_newline-- != 0);
-                            ++bytes_since_newline;
-                        }
-                        ++str;
-                        while (*str != '\0' && *str != '\n') {
-                            /* if we detect a continuing backslash treat the next line as a comment */
-                            char const *continuing_backslash_pos;
-                            if ((continuing_backslash_pos = is_continuing_backslash(str)) != NULL) {
-                                str = continuing_backslash_pos;
-                                if (comment_mode & CC_COMMENT_DISPLAY) {
-                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
-                                }
-                            }
-                            if (comment_mode & CC_COMMENT_DISPLAY) {
-                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
-                            }
-                            ++str;
-                        }
-                        if (comment_mode & CC_COMMENT_DISPLAY) {
-                            WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
-                        }
-                        break;
-
-                    case '*':
-                        ++result.c_comment_count;
-                        if (comment_mode & C_COMMENT_DISPLAY) {
+                            ++result.cc_comment_count;
                             /* add space before comment*/
                             do {
                                 WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
                             } while (bytes_since_newline-- != 0);
                             ++bytes_since_newline;
-                        }
-                        ++str;
-                        while (*str != '\0') {
-                            if (str[0] == '*' && str[1] == '/') {
-                                str += 2;
-                                break;
-                            }
-                            if (comment_mode & C_COMMENT_DISPLAY) {
-                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
-                            }                            
+
                             ++str;
-                        }
-                        if (comment_mode & C_COMMENT_DISPLAY) {
+                            while (*str != '\0' && (*str != '\n' || (str[0] != '\r' && str[1] != '\n'))) {
+                                /* if we detect a continuing backslash treat the next line as a comment */
+                                char const *continuing_backslash_pos;
+                                if ((continuing_backslash_pos = is_continuing_backslash(str)) != NULL) {
+                                    str = continuing_backslash_pos;
+                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+
+                                }
+                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+
+                                ++str;
+                            }
                             WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+
+                        }
+                        break;
+
+                    case '*':
+                        if (comment_mode & C_COMMENT_DISPLAY) {
+
+                            ++result.c_comment_count;
+                            /* add space before comment*/
+                            do {
+                                WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                            } while (bytes_since_newline-- != 0);
+                            ++bytes_since_newline;
+
+                            ++str;
+                            while (*str != '\0') {
+                                if (str[0] == '*' && str[1] == '/') {
+                                    str += 2;
+                                    break;
+                                }
+                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+
+                                ++str;
+                            }
+                            WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+
                         }
                         break;
                 }
@@ -167,6 +170,25 @@ static comment_count read_comments(char const *str, comment_display comment_mode
 
             case '\n':
                 bytes_since_newline = 0;
+                break;
+
+            case ';':
+                if (comment_mode & ASM_COMMENT_DISPLAY) {
+                    ++result.asm_comment_count;
+                    /* add space before comment*/
+                    do {
+                        WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                    } while (bytes_since_newline-- != 0);
+                    ++bytes_since_newline;
+
+                    ++str;
+                    while (*str != '\0' && (*str != '\n' || (str[0] != '\r' && str[1] != '\n'))) {
+                        WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+                        ++str;
+                    }
+
+                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+                }
                 break;
         }
         ++str;
@@ -212,76 +234,90 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                 ++str;
                 switch (*str) {
                     case '/':
-                        ++result.cc_comment_count;
                         if (comment_mode & CC_COMMENT_DISPLAY) {
+                            ++result.cc_comment_count;
                             /* add space before comment*/
                             do {
                                 WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
                             } while (bytes_since_newline-- != 0);
                             ++bytes_since_newline;
-                        }
-                        ++str;
-                        while (*str != '\0' && *str != '\n') {
-                            /* if we detect \\ treat the next line as a comment */
-                            char const *continuing_backslash_pos;
-                            if ((continuing_backslash_pos = is_continuing_backslash(str)) != NULL) {
-                                str = continuing_backslash_pos;
-                                if (comment_mode & CC_COMMENT_DISPLAY) {
-                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
-                                }
-                            }
-                            if (*str == '\n' || (str[0] == '\r' && str[1] == '\n')) {
-                                if (comment_mode & CC_COMMENT_DISPLAY) {
-                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
-                                    output_number(newline_count);
-                                }
-                                ++newline_count;
-                            }
-                            if (comment_mode & CC_COMMENT_DISPLAY) {
-                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
-                            }
                             ++str;
-                            
-                        }
-                        if (comment_mode & CC_COMMENT_DISPLAY) {
+                            while (*str != '\0') {
+
+                                /* stop when we reach the end of the line */
+                                if (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
+                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                    output_number(newline_count);
+                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+
+                                    /* NOTE: when we increment the string before going to the end of loop 
+                                     * we must add to the string pointer by 1 less since we already
+                                     * increment the string pointer at the end of the loop
+                                     */
+                                    str += str[0] == '\n' ? 0 : 1;
+                                    ++newline_count;
+                                    break;
+                                }
+
+                                /* if we detect \\ treat the next line as a comment */
+                                char const *continuing_backslash_pos;
+                                if ((continuing_backslash_pos = is_continuing_backslash(str)) != NULL) {
+                                    
+                                    /* since we are moving to a newline output the current line number */
+                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                    output_number(newline_count);
+                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+                                    
+                                    str = continuing_backslash_pos;
+                                    ++newline_count;
+                                }
+
+                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+
+                                ++str;
+                            }
                             WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
                         }
                         break;
 
                     case '*':
-                        ++result.c_comment_count;
                         if (comment_mode & C_COMMENT_DISPLAY) {
-                            /* add space before comment*/
+                            ++result.c_comment_count;
+                            /* add space before comment */
                             do {
                                 WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
                             } while (bytes_since_newline-- != 0);
                             ++bytes_since_newline;
-                        }
-                        ++str;
-                        while (*str != '\0') {
-                            if (str[0] == '*' && str[1] == '/') {
-                                str += 2;
-                                if (comment_mode & C_COMMENT_DISPLAY) {
-                                    /* print line number */
-                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
-                                    output_number(newline_count);
-                                }
-                                break;
-                            }
-                            if (*str == '\n') {
-                                if (comment_mode & C_COMMENT_DISPLAY) {
-                                    /* print line number */
-                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
-                                    output_number(newline_count);
-                                }
-                                ++newline_count;
-                            }
-                            if (comment_mode & C_COMMENT_DISPLAY) {
-                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
-                            }
+
                             ++str;
-                        }
-                        if (comment_mode & C_COMMENT_DISPLAY) {
+                            while (*str != '\0') {
+                                if (str[0] == '*' && str[1] == '/') {
+                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                    output_number(newline_count);
+
+                                    ++str;
+                                    if (str[1] == '\n' || (str[1] == '\r' && str[2] == '\n')) {
+                                        str += str[0] == '\n' ? 1 : 2;
+                                        ++newline_count;
+                                    }
+                                    break;
+                                }
+
+                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+
+                                ++str;
+                                while (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
+
+                                    /* output a number before the end of the line */
+                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                    output_number(newline_count);
+                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+
+                                    str += str[0] == '\n' ? 1 : 2;
+                                    ++newline_count;
+                                }
+                            }
+
                             WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
                         }
                         break;
@@ -291,6 +327,31 @@ static comment_count read_comments_and_line(char const *str, comment_display com
             case '\n':
                 bytes_since_newline = 0;
                 ++newline_count;
+                break;
+
+            case ';':
+                if (comment_mode & ASM_COMMENT_DISPLAY) {
+                    ++result.asm_comment_count;
+                    /* add space before comment*/
+                    do {
+                        WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                    } while (bytes_since_newline-- != 0);
+                    ++bytes_since_newline;
+
+                    ++str;
+                    while (*str != '\0' && (*str != '\n' || (str[0] != '\r' && str[1] != '\n'))) {
+                        WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+                        ++str;
+                        if (*str == '\n' || (str[0] == '\r' && str[1] == '\n')) {
+                            WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                            output_number(newline_count);
+
+                            ++newline_count;
+                        }
+                    }
+
+                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+                }
                 break;
         }
         ++str;
@@ -335,6 +396,11 @@ static void read_file_comments(wchar_t const *filename, comment_display comment_
                 WriteFile(L"stdout", stdout, "\r\nc style comments: ", 20, NULL, NULL);
                 output_number(count.c_comment_count);
             }
+
+            if (comment_mode & ASM_COMMENT_DISPLAY) {
+                WriteFile(L"stdout", stdout, "\r\nasm style comments: ", 22, NULL, NULL);
+                output_number(count.asm_comment_count);
+            }
         }
     }
 }
@@ -349,14 +415,16 @@ static bool is_file(wchar_t const *filepath)
     return (result & ~FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
-/* TODO: consider supporting asm comments i.e ; also maybe #*/
+/* TODO: consider supporting asm comments ; also maybe #*/
 void __cdecl mainCRTStartup(void)
 {
-    static wchar_t const *help_message = L"Usage: comments [-l or --line] [-nl or --no_line] [-m [mode] or --mode=[mode]] [--display_comment_count or -dcc] [--hide_comment_count -hcc] file1 ...\n\
+    static wchar_t const *help_message = L"Usage: comments [-l or --line] [-nl or --no_line] [-e [mode] or --enable=[mode]] [-m [mode] or --mode=[mode]] [-d [mode] or --disable=[mode]] [--display_comment_count or -dcc] [--hide_comment_count -hcc] file1 ...\n\
                                       -l or --line(disabled by default): makes it so the program shows the line number of each comment\n\
                                       -nl or --no_line: has the oppsite effect of -l\n\
-                                      -m [mode] or --mode=[mode]: sets the comment mode for example -m cc only shows c++ comments\n\
-                                      [mode](default: the different modes are c++ style comments //(cc, cxx, cpp), c style comments /**/ (c), and all which enables all the available comments(all) \n\
+                                      -e [mode] or --enable=[mode]: enables the comment mode to [mode] for example -e asm enables asm comments\n\
+                                      -m [mode] or --mode=[mode]: sets the comment mode  to [mode] for example -m asm only allows only asm comments\n\
+                                      -d [mode] or --disable=[mode]: disables the comment mode to [mode] for example -d asm disables asm comments\n\
+                                      [mode](the default mode is c and c++): the different modes are c++ style comments //(cc, cxx, cpp), c style comments /**/ (c), asm style comments ;(asm), default /**/ //(default), and all which enables all the available comments(all) \n\
                                       -dcc or --display_comment_count(enabled by defualt): displays the amount of comments found \n\
                                       -hcc or --hides_comment_count: hides the amount of comments found \n\
                                      ";
@@ -370,7 +438,7 @@ void __cdecl mainCRTStartup(void)
     
     bool show_lines = false;
     bool display_comment_count = true;
-    comment_display comment_mode = ALL_COMMENT_DISPLAY;
+    comment_display comment_mode = CC_COMMENT_DISPLAY | C_COMMENT_DISPLAY;
 
     /* parse command line args */
     for (int i = 0; i < argc; ++i) {
@@ -392,6 +460,10 @@ void __cdecl mainCRTStartup(void)
                 comment_mode = CC_COMMENT_DISPLAY;
             } else if (!lstrcmpiW(argv[i], L"c")) {
                 comment_mode = C_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"asm")) {
+                comment_mode = ASM_COMMENT_DISPLAY;
+            } else if (!!lstrcmpiW(argv[i], L"default")) {
+                comment_mode = DEFAULT_COMMENT_DISPLAY;
             } else if (!lstrcmpiW(argv[i], L"all")) {
                 comment_mode = ALL_COMMENT_DISPLAY;
             } else {
@@ -404,8 +476,84 @@ void __cdecl mainCRTStartup(void)
                 comment_mode = CC_COMMENT_DISPLAY;
             } else if (!lstrcmpiW(argv[i], L"c")) {
                 comment_mode = C_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"asm")) {
+                comment_mode = ASM_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"default")) {
+                comment_mode = DEFAULT_COMMENT_DISPLAY;
             } else if (!lstrcmpiW(argv[i], L"all")) {
                 comment_mode = ALL_COMMENT_DISPLAY;
+            } else {
+                error_messagew(L"Error: invalid arguments\n", help_message);
+            }
+        } else if (argv[i][0] == '-' && argv[i][1] == '-'
+            && argv[i][2] == 'e' && argv[i][3] == 'n'
+            && argv[i][4] == 'a' && argv[i][5] == 'b'
+            && argv[i][6] == 'l' && argv[i][7] == 'e'
+            && argv[i][8] == '=') {
+            argv[i] += 9;
+            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
+                || !lstrcmpiW(argv[i], L"cpp")) {
+                comment_mode |= CC_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"c")) {
+                comment_mode |= C_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"asm")) {
+                comment_mode |= ASM_COMMENT_DISPLAY;
+            } else if(!lstrcmpiW(argv[i], L"default")) {
+                comment_mode |= DEFAULT_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"all")) {
+                comment_mode |= ALL_COMMENT_DISPLAY;
+            } else {
+                error_messagew(L"Error: invalid arguments\n", help_message);
+            }
+        } else if (i + 1 < argc && !lstrcmpW(argv[i], L"-e")) {
+            ++i;
+            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
+                || !lstrcmpiW(argv[i], L"cpp")) {
+                comment_mode |= CC_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"c")) {
+                comment_mode |= C_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"asm")) {
+                comment_mode |= ASM_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"default")) {
+                comment_mode |= DEFAULT_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"all")) {
+                comment_mode |= ALL_COMMENT_DISPLAY;
+            } else {
+                error_messagew(L"Error: invalid arguments\n", help_message);
+            }
+        } else if (argv[i][0] == '-' && argv[i][1] == '-'
+            && argv[i][2] == 'd' && argv[i][3] == 'i'
+            && argv[i][4] == 's' && argv[i][5] == 'a'
+            && argv[i][6] == 'b' && argv[i][7] == 'l'
+            && argv[i][8] == 'e' && argv[i][9] == '=') {
+            argv[i] += 10;
+            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
+                || !lstrcmpiW(argv[i], L"cpp")) {
+                comment_mode &= ~CC_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"c")) {
+                comment_mode &= ~C_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"asm")) {
+                comment_mode &= ~ASM_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"default")) {
+                comment_mode &= ~DEFAULT_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"all")) {
+                comment_mode &= ~ALL_COMMENT_DISPLAY;
+            } else {
+                error_messagew(L"Error: invalid arguments\n", help_message);
+            }
+        } else if (i + 1 < argc && !lstrcmpW(argv[i], L"-d")) {
+            ++i;
+            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
+                || !lstrcmpiW(argv[i], L"cpp")) {
+                comment_mode &= ~CC_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"c")) {
+                comment_mode &= ~C_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"asm")) {
+                comment_mode &= ~ASM_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"default")) {
+                comment_mode &= ~DEFAULT_COMMENT_DISPLAY;
+            } else if (!lstrcmpiW(argv[i], L"all")) {
+                comment_mode &= ~ALL_COMMENT_DISPLAY;
             } else {
                 error_messagew(L"Error: invalid arguments\n", help_message);
             }
