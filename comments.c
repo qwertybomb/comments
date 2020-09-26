@@ -119,7 +119,7 @@ static comment_count read_comments(char const *str, comment_display comment_mode
                             ++result.cc_comment_count;
                             /* add space before comment*/
                             do {
-                                WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                             } while (bytes_since_newline-- != 0);
                             ++bytes_since_newline;
 
@@ -147,7 +147,7 @@ static comment_count read_comments(char const *str, comment_display comment_mode
                             ++result.c_comment_count;
                             /* add space before comment*/
                             do {
-                                WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                             } while (bytes_since_newline-- != 0);
                             ++bytes_since_newline;
 
@@ -177,7 +177,7 @@ static comment_count read_comments(char const *str, comment_display comment_mode
                     ++result.asm_comment_count;
                     /* add space before comment*/
                     do {
-                        WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                     } while (bytes_since_newline-- != 0);
                     ++bytes_since_newline;
 
@@ -238,7 +238,7 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                             ++result.cc_comment_count;
                             /* add space before comment*/
                             do {
-                                WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                             } while (bytes_since_newline-- != 0);
                             ++bytes_since_newline;
                             ++str;
@@ -246,7 +246,7 @@ static comment_count read_comments_and_line(char const *str, comment_display com
 
                                 /* stop when we reach the end of the line */
                                 if (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
-                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                                     output_number(newline_count);
                                     WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
 
@@ -264,7 +264,7 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                                 if ((continuing_backslash_pos = is_continuing_backslash(str)) != NULL) {
                                     
                                     /* since we are moving to a newline output the current line number */
-                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                                     output_number(newline_count);
                                     WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
                                     
@@ -285,14 +285,14 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                             ++result.c_comment_count;
                             /* add space before comment */
                             do {
-                                WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                             } while (bytes_since_newline-- != 0);
                             ++bytes_since_newline;
 
                             ++str;
                             while (*str != '\0') {
                                 if (str[0] == '*' && str[1] == '/') {
-                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                                     output_number(newline_count);
 
                                     ++str;
@@ -309,7 +309,7 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                                 while (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
 
                                     /* output a number before the end of the line */
-                                    WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                                     output_number(newline_count);
                                     WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
 
@@ -334,7 +334,7 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                     ++result.asm_comment_count;
                     /* add space before comment*/
                     do {
-                        WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
+                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                     } while (bytes_since_newline-- != 0);
                     ++bytes_since_newline;
 
@@ -415,7 +415,7 @@ static bool is_file(wchar_t const *filepath)
     return (result & ~FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
-/* TODO: consider supporting asm comments ; also maybe #*/
+/* TODO: consider supporting python style comments #*/
 void __cdecl mainCRTStartup(void)
 {
     static wchar_t const *help_message = L"Usage: comments [-l or --line] [-nl or --no_line] [-e [mode] or --enable=[mode]] [-m [mode] or --mode=[mode]] [-d [mode] or --disable=[mode]] [--display_comment_count or -dcc] [--hide_comment_count -hcc] file1 ...\n\
