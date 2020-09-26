@@ -14,7 +14,7 @@ __declspec(noreturn) static void error_messagew(size_t count, wchar_t const **me
     ExitProcess(GetLastError());
 }
 
-#define error_messagew(...) error_messagew(sizeof((wchar_t const*[]){__VA_ARGS__}) / sizeof(wchar_t const *), (wchar_t const*[]){__VA_ARGS__});
+#define error_messagew(...) error_messagew(sizeof((wchar_t const*[]){__VA_ARGS__}) / sizeof(wchar_t const *), (wchar_t const*[]){__VA_ARGS__})
 #define WriteFile(filepath, ...) if(!WriteFile(__VA_ARGS__)) { error_messagew(L"Error could not write to ", filepath); }
 
 typedef enum comment_display
@@ -36,20 +36,47 @@ typedef struct comment_count
 
 static void output_number(size_t number)
 {
-    size_t reversed_number = 0;
+    /* log10(2^64) is around 20 meaning this should be able to hold all numbers inputed */
+    char digits[20] = {'0'};
 
-    /* get the reversed version of the number  */
-    while (number != 0) {
-        reversed_number *= 10;
-        reversed_number += number % 10;
+    /* get the reversed digets of the number */
+    size_t i = number == 0 ? 1 : 0; /* check if number is zero */
+    for (; number != 0; ++i) {
+        digits[i] = (number % 10) + '0';
         number /= 10;
     }
     
+    /* reverse the reversed digets of the number */
+    for (size_t j = 0; j < i - 1; ++j) {
+        char temp_digit = digits[j];
+        digits[j] = digits[i - 1 - j];
+        digits[i - 1 - j] = temp_digit;
+    }
+    
     /* print the reversed number */
-    do {
-        WriteFile(L"stdout", stdout, (char[]) { (reversed_number % 10) + '0' }, 1, NULL, NULL);
-        reversed_number /= 10;
-    } while (reversed_number != 0);
+    WriteFile(L"stdout", stdout, digits, i, NULL, NULL);
+}
+
+static char const *is_continuing_backslash(char const *str)
+{
+    /* NOTE: the loop is needed because cotinuing backslashs can nested like \\\\\ */
+    if (*str != '\\') return NULL;
+    while (*str != '\0') {
+        switch (*str) {
+            case '\r':
+                break;
+            case '\n':
+                return str + 1;
+            case '\\':
+                break;
+            default:
+                return NULL;
+        }
+
+        ++str;
+    }
+
+    return NULL;
 }
 
 /* NOTE: this function requires a null terminated string */
@@ -86,15 +113,17 @@ static comment_count read_comments(char const *str, comment_display comment_mode
                         ++result.cc_comment_count;
                         if (comment_mode & CC_COMMENT_DISPLAY) {
                             /* add space before comment*/
-                            while (bytes_since_newline-- > 0) {
+                            do {
                                 WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
-                            }
+                            } while(bytes_since_newline-- != 0);
+                            ++bytes_since_newline;
                         }
                         ++str;
                         while (*str != '\0' && *str != '\n') {
-                            /* if we detect \\ treat the next line as a comment */
-                            if (str[0] == '\\' && str[1] == '\\' && (str[2] == '\n' || (str[2] == '\r' && str[3] == '\n'))) {
-                                str += 3;
+                            /* if we detect a continuing backslash treat the next line as a comment */
+                            char const *continuing_backslash_pos;
+                            if ((continuing_backslash_pos = is_continuing_backslash(str)) != NULL) {
+                                str = continuing_backslash_pos;
                                 if (comment_mode & CC_COMMENT_DISPLAY) {
                                     WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
                                 }
@@ -113,9 +142,10 @@ static comment_count read_comments(char const *str, comment_display comment_mode
                         ++result.c_comment_count;
                         if (comment_mode & C_COMMENT_DISPLAY) {
                             /* add space before comment*/
-                            while (bytes_since_newline-- > 0) {
+                            do {
                                 WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
-                            }
+                            } while (bytes_since_newline-- != 0);
+                            ++bytes_since_newline;
                         }
                         ++str;
                         while (*str != '\0') {
@@ -137,9 +167,10 @@ static comment_count read_comments(char const *str, comment_display comment_mode
 
             case '\n':
                 bytes_since_newline = 0;
+                break;
         }
         ++str;
-        ++bytes_since_newline;
+        bytes_since_newline += *str == '\t' ? 4 : 1; /* handle tabs */
     }
 
     return result;
@@ -184,15 +215,17 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                         ++result.cc_comment_count;
                         if (comment_mode & CC_COMMENT_DISPLAY) {
                             /* add space before comment*/
-                            while (bytes_since_newline-- > 0) {
+                            do {
                                 WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
-                            }
+                            } while (bytes_since_newline-- != 0);
+                            ++bytes_since_newline;
                         }
                         ++str;
                         while (*str != '\0' && *str != '\n') {
                             /* if we detect \\ treat the next line as a comment */
-                            if (str[0] == '\\' && str[1] == '\\' && (str[2] == '\n' || (str[2] == '\r' && str[3] == '\n'))) {
-                                str += 3;
+                            char const *continuing_backslash_pos;
+                            if ((continuing_backslash_pos = is_continuing_backslash(str)) != NULL) {
+                                str = continuing_backslash_pos;
                                 if (comment_mode & CC_COMMENT_DISPLAY) {
                                     WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
                                 }
@@ -218,10 +251,11 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                     case '*':
                         ++result.c_comment_count;
                         if (comment_mode & C_COMMENT_DISPLAY) {
-                            /* add space before comment */
-                            while (bytes_since_newline-- > 0) {
+                            /* add space before comment*/
+                            do {
                                 WriteFile(L"stdout", stdout, (char[]) { ' ' }, 1, NULL, NULL);
-                            }
+                            } while (bytes_since_newline-- != 0);
+                            ++bytes_since_newline;
                         }
                         ++str;
                         while (*str != '\0') {
@@ -257,10 +291,10 @@ static comment_count read_comments_and_line(char const *str, comment_display com
             case '\n':
                 bytes_since_newline = 0;
                 ++newline_count;
-
+                break;
         }
         ++str;
-        ++bytes_since_newline;
+        bytes_since_newline += *str == '\t' ? 4 : 1; /* handle tabs */
     }
 
     return result;
