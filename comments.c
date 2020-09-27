@@ -23,7 +23,8 @@ typedef enum comment_display
     C_COMMENT_DISPLAY = 0x1,
     CC_COMMENT_DISPLAY = 0x2,
     ASM_COMMENT_DISPLAY = 0x4,
-    DEFAULT_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY,
+    AUTO_COMMENT_DISPLAY = 0x8,
+    C_AND_CC_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY,
     ALL_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY | ASM_COMMENT_DISPLAY
 } comment_display;
 
@@ -45,14 +46,14 @@ static void output_number(size_t number)
     char digits[20] = {'0'};
 
     /* get the reversed digets of the number */
-    size_t i = number == 0 ? 1 : 0; /* check if number is zero */
+    int i = number == 0 ? 1 : 0; /* check if number is zero */
     for (; number != 0; ++i) {
         digits[i] = (number % 10) + '0';
         number /= 10;
     }
     
     /* reverse the reversed digets of the number */
-    for (size_t j = 0; j < i - 1; ++j) {
+    for (int j = 0; j < i - 1; ++j) {
         char temp_digit = digits[j];
         digits[j] = digits[i - 1 - j];
         digits[i - 1 - j] = temp_digit;
@@ -82,6 +83,36 @@ static char const *is_continuing_backslash(char const *str)
     }
 
     return NULL;
+}
+
+/* NOTE: this functions assumes a file with no extension is just a c++ file */
+static comment_display get_comment_mode(wchar_t const *str)
+{
+    wchar_t const *file_extension_pos = str;
+    
+    /* find location of the file extension */
+    {
+        wchar_t *temp_pos = NULL;
+        while (*file_extension_pos != '\0') {
+            if (*file_extension_pos == '.') {
+                temp_pos = file_extension_pos;
+            }
+            ++file_extension_pos;
+        }
+
+        if (temp_pos == NULL) {
+            return C_AND_CC_COMMENT_DISPLAY;
+        }
+
+        file_extension_pos = temp_pos;
+    }
+
+    /* assembly */
+    if (!lstrcmpW(file_extension_pos, L".asm") || !lstrcmpW(file_extension_pos, L".S")) {
+        return ASM_COMMENT_DISPLAY;
+    } else {
+        return C_AND_CC_COMMENT_DISPLAY;
+    }
 }
 
 /* NOTE: this function requires a null terminated string */
@@ -115,7 +146,7 @@ static comment_count read_comments(char const *str, comment_display comment_mode
                 ++str;
                 switch (*str) {
                     case '/':
-                        if (comment_mode & CC_COMMENT_DISPLAY) {
+                        if ((comment_mode & CC_COMMENT_DISPLAY) || (comment_mode & ASM_COMMENT_DISPLAY /* for gas */ )) {
                             ++result.cc_comment_count;
                             /* add space before comment*/
                             do {
@@ -390,18 +421,21 @@ static void read_file_comments(wchar_t const *filename, comment_display comment_
         comment_count count = show_line_number ? read_comments_and_line(file_buffer, comment_mode) : read_comments(file_buffer, comment_mode);
         if (display_comment_count) {
             if (comment_mode & CC_COMMENT_DISPLAY) {
-                WriteFile(L"stdout", stdout, "c++ style comments: \r\n", 22, NULL, NULL);
+                WriteFile(L"stdout", stdout, "c++ style comments: ", 20, NULL, NULL);
                 output_number(count.cc_comment_count);
+                WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
             }
 
             if (comment_mode & C_COMMENT_DISPLAY) {
-                WriteFile(L"stdout", stdout, "c style comments: \r\n", 20, NULL, NULL);
+                WriteFile(L"stdout", stdout, "c style comments: ", 18, NULL, NULL);
                 output_number(count.c_comment_count);
+                WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
             }
 
             if (comment_mode & ASM_COMMENT_DISPLAY) {
-                WriteFile(L"stdout", stdout, "asm style comments: \r\n", 22, NULL, NULL);
+                WriteFile(L"stdout", stdout, "asm style comments: ", 20, NULL, NULL);
                 output_number(count.asm_comment_count);
+                WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
             }
         }
     }
@@ -428,7 +462,13 @@ void __cdecl mainCRTStartup(void)
                                         -e [mode] or --enable=[mode]: enables the comment mode to [mode] for example -e asm enables asm comments\n\
                                         -m [mode] or --mode=[mode]: sets the comment mode  to [mode] for example -m asm only allows only asm comments\n\
                                         -d [mode] or --disable=[mode]: disables the comment mode to [mode] for example -d asm disables asm comments\n\
-                                        [mode](the default mode is c and c++): the different modes are c++ style comments //(cc, cxx, cpp), c style comments /**/ (c), asm style comments ;(asm), default /**/ //(default), and all which enables all the available comments(all) \n\
+                                        [mode](the default mode auto): the different modes are \n\
+                                        c++ style comments //(cc, cxx, cpp), \n\
+                                        c style comments /**/ (c), \n\
+                                        asm style comments ;(asm), \n\
+                                        c and c++ style comments /**/ //(c|c++), \n\
+                                        auto which detects the comment style based on file extension(auto), \n\
+                                        and all which enables all the available comment styles(all) \n\
                                         -dcc or --display_comment_count(enabled by defualt): displays the amount of comments found \n\
                                         -hcc or --hides_comment_count: hides the amount of comments found \n\
                                         ";
@@ -442,7 +482,26 @@ void __cdecl mainCRTStartup(void)
     
     bool show_lines = false;
     bool display_comment_count = true;
-    comment_display comment_mode = CC_COMMENT_DISPLAY | C_COMMENT_DISPLAY;
+    comment_display comment_mode = AUTO_COMMENT_DISPLAY;
+
+    /* this makes it easier to add flags */
+#define FIND_ARG(op)                                                    \
+    if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")       \
+        || !lstrcmpiW(argv[i], L"cpp")) {                               \
+        comment_mode op CC_COMMENT_DISPLAY;                             \
+    } else if (!lstrcmpiW(argv[i], L"c")) {                             \
+        comment_mode op C_COMMENT_DISPLAY;                              \
+    } else if (!lstrcmpiW(argv[i], L"asm")) {                           \
+        comment_mode op ASM_COMMENT_DISPLAY;                            \
+    } else if (!lstrcmpiW(argv[i], L"c|c++")) {                         \
+        comment_mode op C_AND_CC_COMMENT_DISPLAY;                       \
+    }  else if (!lstrcmpiW(argv[i], L"auto")) {                         \
+        comment_mode op AUTO_COMMENT_DISPLAY;                           \
+    } else if (!lstrcmpiW(argv[i], L"all")) {                           \
+        comment_mode op ALL_COMMENT_DISPLAY;                            \
+    } else {                                                            \
+        error_messagew(L"Error: invalid arguments\n", help_message);    \
+    }                                                                   \
 
     /* parse command line args */
     for (int i = 0; i < argc; ++i) {
@@ -459,110 +518,37 @@ void __cdecl mainCRTStartup(void)
             && argv[i][4] == 'd' && argv[i][5] == 'e'
             && argv[i][6] == '=') {
             argv[i] += 7;
-            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
-                || !lstrcmpiW(argv[i], L"cpp")) {
-                comment_mode = CC_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"c")) {
-                comment_mode = C_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"asm")) {
-                comment_mode = ASM_COMMENT_DISPLAY;
-            } else if (!!lstrcmpiW(argv[i], L"default")) {
-                comment_mode = DEFAULT_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"all")) {
-                comment_mode = ALL_COMMENT_DISPLAY;
-            } else {
-                error_messagew(L"Error: invalid arguments\n", help_message);
-            }
+            FIND_ARG(= );
         } else if (i + 1 < argc && !lstrcmpW(argv[i], L"-m")) {
             ++i;
-            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
-                || !lstrcmpiW(argv[i], L"cpp")) {
-                comment_mode = CC_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"c")) {
-                comment_mode = C_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"asm")) {
-                comment_mode = ASM_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"default")) {
-                comment_mode = DEFAULT_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"all")) {
-                comment_mode = ALL_COMMENT_DISPLAY;
-            } else {
-                error_messagew(L"Error: invalid arguments\n", help_message);
-            }
+            FIND_ARG(= );
         } else if (argv[i][0] == '-' && argv[i][1] == '-'
-            && argv[i][2] == 'e' && argv[i][3] == 'n'
-            && argv[i][4] == 'a' && argv[i][5] == 'b'
-            && argv[i][6] == 'l' && argv[i][7] == 'e'
-            && argv[i][8] == '=') {
-            argv[i] += 9;
-            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
-                || !lstrcmpiW(argv[i], L"cpp")) {
-                comment_mode |= CC_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"c")) {
-                comment_mode |= C_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"asm")) {
-                comment_mode |= ASM_COMMENT_DISPLAY;
-            } else if(!lstrcmpiW(argv[i], L"default")) {
-                comment_mode |= DEFAULT_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"all")) {
-                comment_mode |= ALL_COMMENT_DISPLAY;
-            } else {
-                error_messagew(L"Error: invalid arguments\n", help_message);
-            }
+            && argv[i][2] == 'm' && argv[i][3] == 'o'
+            && argv[i][4] == 'd' && argv[i][5] == 'e'
+            && argv[i][6] == '=') {
+            argv[i] += 7;
+            FIND_ARG(= );
         } else if (i + 1 < argc && !lstrcmpW(argv[i], L"-e")) {
             ++i;
-            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
-                || !lstrcmpiW(argv[i], L"cpp")) {
-                comment_mode |= CC_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"c")) {
-                comment_mode |= C_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"asm")) {
-                comment_mode |= ASM_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"default")) {
-                comment_mode |= DEFAULT_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"all")) {
-                comment_mode |= ALL_COMMENT_DISPLAY;
-            } else {
-                error_messagew(L"Error: invalid arguments\n", help_message);
-            }
+            FIND_ARG(|= );
         } else if (argv[i][0] == '-' && argv[i][1] == '-'
             && argv[i][2] == 'd' && argv[i][3] == 'i'
             && argv[i][4] == 's' && argv[i][5] == 'a'
             && argv[i][6] == 'b' && argv[i][7] == 'l'
             && argv[i][8] == 'e' && argv[i][9] == '=') {
             argv[i] += 10;
-            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
-                || !lstrcmpiW(argv[i], L"cpp")) {
-                comment_mode &= ~CC_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"c")) {
-                comment_mode &= ~C_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"asm")) {
-                comment_mode &= ~ASM_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"default")) {
-                comment_mode &= ~DEFAULT_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"all")) {
-                comment_mode &= ~ALL_COMMENT_DISPLAY;
-            } else {
-                error_messagew(L"Error: invalid arguments\n", help_message);
-            }
+            FIND_ARG(&= ~);
         } else if (i + 1 < argc && !lstrcmpW(argv[i], L"-d")) {
             ++i;
-            if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")
-                || !lstrcmpiW(argv[i], L"cpp")) {
-                comment_mode &= ~CC_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"c")) {
-                comment_mode &= ~C_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"asm")) {
-                comment_mode &= ~ASM_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"default")) {
-                comment_mode &= ~DEFAULT_COMMENT_DISPLAY;
-            } else if (!lstrcmpiW(argv[i], L"all")) {
-                comment_mode &= ~ALL_COMMENT_DISPLAY;
-            } else {
-                error_messagew(L"Error: invalid arguments\n", help_message);
-            }
+            FIND_ARG(&= ~);
         } else if (is_file(argv[i])) {
+            if (comment_mode & AUTO_COMMENT_DISPLAY) {
+                comment_mode = get_comment_mode(argv[i]);
+            }
             read_file_comments(argv[i], comment_mode, show_lines, display_comment_count);
+        } else if (!lstrcmpiW(argv[i], L"--help")) {
+            /* NOTE: this assumes stdout is console when printing the help message */
+            WriteConsoleW(stdout, help_message, sizeof(help_message), NULL, NULL);
         } else {
             error_messagew(L"Error: invalid arguments\n", help_message);
         }
@@ -571,6 +557,5 @@ void __cdecl mainCRTStartup(void)
     /* cleanup */
     LocalFree(argv - 1);
 
-    /* success */
-    ExitProcess(0);
+    ExitProcess(GetLastError() /* NOTE: if we were successful this should just be zero */);
 }
