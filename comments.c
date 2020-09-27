@@ -112,9 +112,9 @@ static comment_display get_comment_mode(wchar_t const *str)
     }
 
     /* assembly */
-    if (!lstrcmpW(file_extension_pos, L".asm") || !lstrcmpW(file_extension_pos, L".S")) {
+    if (!lstrcmpiW(file_extension_pos, L".asm") || !lstrcmpiW(file_extension_pos, L".s")) {
         return ASM_COMMENT_DISPLAY;
-    } else if (!lstrcmpW(file_extension_pos, L".py")) {
+    } else if (!lstrcmpiW(file_extension_pos, L".py")) {
         return PYTHON_COMMENT_DISPLAY;
     } else {
         return C_AND_CC_COMMENT_DISPLAY;
@@ -207,7 +207,8 @@ static comment_count read_comments(char const *str, bool show_lines, comment_dis
                 switch (*str) {
                     case '/':
                         if (comment_mode & CC_COMMENT_DISPLAY) {
-                            ++result.cc_comment_count;
+                            result.cc_comment_count++;
+
                             /* add space before comment*/
                             do {
                                 WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
