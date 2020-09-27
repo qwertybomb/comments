@@ -21,9 +21,10 @@ typedef enum comment_display
 {
     NO_COMMENT_DISPLAY = 0x0,
     C_COMMENT_DISPLAY = 0x1,
-    CC_COMMENT_DISPLAY = 0x2,
-    ASM_COMMENT_DISPLAY = 0x4,
-    AUTO_COMMENT_DISPLAY = 0x8,
+    CC_COMMENT_DISPLAY = C_COMMENT_DISPLAY << 1,
+    ASM_COMMENT_DISPLAY = CC_COMMENT_DISPLAY << 1,
+    PYTHON_COMMENT_DISPLAY = ASM_COMMENT_DISPLAY << 1,
+    AUTO_COMMENT_DISPLAY = PYTHON_COMMENT_DISPLAY << 1,
     C_AND_CC_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY,
     ALL_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY | ASM_COMMENT_DISPLAY
 } comment_display;
@@ -38,6 +39,9 @@ typedef struct comment_count
 
     /* asm comment count */
     size_t asm_comment_count;
+
+    /* python comment count */
+    size_t python_comment_count;
 } comment_count;
 
 static void output_number(size_t number)
@@ -110,127 +114,15 @@ static comment_display get_comment_mode(wchar_t const *str)
     /* assembly */
     if (!lstrcmpW(file_extension_pos, L".asm") || !lstrcmpW(file_extension_pos, L".S")) {
         return ASM_COMMENT_DISPLAY;
+    } else if (!lstrcmpW(file_extension_pos, L".py")) {
+        return PYTHON_COMMENT_DISPLAY;
     } else {
         return C_AND_CC_COMMENT_DISPLAY;
     }
 }
 
 /* NOTE: this function requires a null terminated string */
-static comment_count read_comments(char const *str, comment_display comment_mode)
-{
-    comment_count result = { 0 };
-
-    /* keep reading the next char until we reach a null terminator*/
-    size_t bytes_since_newline = 0;
-    while (*str != '\0') {
-        switch (*str) {
-            /* handle "" and '' */
-            case '"':
-            case '\'': {
-                /* we need to read the current char to know what type of quote we are using
-                 * once we have already read the current char so we need to go to the next one
-                 */
-                char quote_type = *str++;
-
-                while (*str != '0' && *str != quote_type) {
-                    /* just skip escape codes as the could containe " or ' */
-                    if (*str == '\\') {
-                        ++str;
-                    }
-                    ++str;
-                }
-                break;
-            }
-           
-            case '/':
-                ++str;
-                switch (*str) {
-                    case '/':
-                        if ((comment_mode & CC_COMMENT_DISPLAY) || (comment_mode & ASM_COMMENT_DISPLAY /* for gas */ )) {
-                            ++result.cc_comment_count;
-                            /* add space before comment*/
-                            do {
-                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
-                            } while (bytes_since_newline-- != 0);
-                            ++bytes_since_newline;
-
-                            ++str;
-                            while (*str != '\0' && (*str != '\n' || (str[0] != '\r' && str[1] != '\n'))) {
-                                /* if we detect a continuing backslash treat the next line as a comment */
-                                char const *continuing_backslash_pos;
-                                if ((continuing_backslash_pos = is_continuing_backslash(str)) != NULL) {
-                                    str = continuing_backslash_pos;
-                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
-
-                                }
-                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
-
-                                ++str;
-                            }
-                            WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
-
-                        }
-                        break;
-
-                    case '*':
-                        if (comment_mode & C_COMMENT_DISPLAY) {
-
-                            ++result.c_comment_count;
-                            /* add space before comment*/
-                            do {
-                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
-                            } while (bytes_since_newline-- != 0);
-                            ++bytes_since_newline;
-
-                            ++str;
-                            while (*str != '\0') {
-                                if (str[0] == '*' && str[1] == '/') {
-                                    str += 2;
-                                    break;
-                                }
-                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
-
-                                ++str;
-                            }
-                            WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
-
-                        }
-                        break;
-                }
-                break;
-
-            case '\n':
-                bytes_since_newline = 0;
-                break;
-
-            case ';':
-                if (comment_mode & ASM_COMMENT_DISPLAY) {
-                    ++result.asm_comment_count;
-                    /* add space before comment*/
-                    do {
-                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
-                    } while (bytes_since_newline-- != 0);
-                    ++bytes_since_newline;
-
-                    ++str;
-                    while (*str != '\0' && (*str != '\n' && (str[0] != '\r' && str[1] != '\n'))) {
-                        WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
-                        ++str;
-                    }
-
-                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
-                }
-                break;
-        }
-        ++str;
-        bytes_since_newline += *str == '\t' ? 4 : 1; /* handle tabs */
-    }
-
-    return result;
-}
-
-/* NOTE: this function requires a null terminated string */
-static comment_count read_comments_and_line(char const *str, comment_display comment_mode)
+static comment_count read_comments(char const *str, bool show_lines, comment_display comment_mode)
 {
     comment_count result = { 0 };
 
@@ -247,6 +139,54 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                  */
                 char quote_type = *str++;
 
+                /* check for python doc string */
+                if ((comment_mode & PYTHON_COMMENT_DISPLAY) && str[0] == quote_type && str[1] == quote_type) {
+                    ++result.python_comment_count;
+                    /* add space before comment*/
+                    do {
+                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                    } while (bytes_since_newline-- != 0);
+                    ++bytes_since_newline;
+
+                    str += 2;
+                    while (*str != '\0') {
+                        if (str[0] == quote_type && str[1] == quote_type && str[2] == quote_type) {
+                            if (show_lines) {
+                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                output_number(newline_count);
+                            }
+
+                            str += 2;
+                            if (str[1] == '\n' || (str[1] == '\r' && str[2] == '\n')) {
+                                str += str[0] == '\n' ? 1 : 2;
+                                ++newline_count;
+                            }
+                            break;
+                        }
+
+                        WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+
+                        ++str;
+
+                        while (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
+                            if (show_lines) {
+                                /* output a number before the end of the line */
+                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                output_number(newline_count);
+                            }
+
+                            WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+
+                            str += str[0] == '\n' ? 1 : 2;
+                            ++newline_count;
+                        }
+                    }
+
+                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+                    break;
+                }
+
+
                 while (*str != '0' && *str != quote_type) {
                     /* just skip escape codes as the could containe " or ' */
                     if (*str == '\\') {
@@ -258,6 +198,7 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                     }
                     ++str;
                 }
+
                 break;
             }
 
@@ -277,9 +218,10 @@ static comment_count read_comments_and_line(char const *str, comment_display com
 
                                 /* stop when we reach the end of the line */
                                 if (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
-                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
-                                    output_number(newline_count);
-                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+                                    if (show_lines) {
+                                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                        output_number(newline_count);
+                                    }
 
                                     /* NOTE: when we increment the string before going to the end of loop 
                                      * we must add to the string pointer by 1 less since we already
@@ -295,10 +237,13 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                                 if ((continuing_backslash_pos = is_continuing_backslash(str)) != NULL) {
                                     
                                     /* since we are moving to a newline output the current line number */
-                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
-                                    output_number(newline_count);
-                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+                                    if (show_lines) {
+                                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                        output_number(newline_count);
+                                    }
                                     
+                                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+
                                     str = continuing_backslash_pos;
                                     ++newline_count;
                                 }
@@ -323,8 +268,10 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                             ++str;
                             while (*str != '\0') {
                                 if (str[0] == '*' && str[1] == '/') {
-                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
-                                    output_number(newline_count);
+                                    if (show_lines) {
+                                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                        output_number(newline_count);
+                                    }
 
                                     ++str;
                                     if (str[1] == '\n' || (str[1] == '\r' && str[2] == '\n')) {
@@ -338,10 +285,12 @@ static comment_count read_comments_and_line(char const *str, comment_display com
 
                                 ++str;
                                 while (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
+                                    if (show_lines) {
+                                        /* output a number before the end of the line */
+                                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                        output_number(newline_count);
+                                    }
 
-                                    /* output a number before the end of the line */
-                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
-                                    output_number(newline_count);
                                     WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
 
                                     str += str[0] == '\n' ? 1 : 2;
@@ -372,9 +321,41 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                     ++str;
                     while (*str != '\0') {
                         if (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
-                            WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
-                            output_number(newline_count);
+                            if (show_lines) {
+                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                output_number(newline_count);
+                            }
 
+                            ++newline_count;
+                            break;
+                        }
+
+                        WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+                        ++str;
+                    }
+
+                    WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+                }
+                break;
+
+            case '#':
+                if (comment_mode & PYTHON_COMMENT_DISPLAY) {
+                    ++result.python_comment_count;
+                    /* add space before comment*/
+                    do {
+                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                    } while (bytes_since_newline-- != 0);
+                    ++bytes_since_newline;
+
+                    ++str;
+                    while (*str != '\0') {
+                        if (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
+                            if (show_lines) {
+                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                output_number(newline_count);
+                            }
+
+                            str += str[0] == '\n' ? 0 : 1;
                             ++newline_count;
                             break;
                         }
@@ -418,7 +399,7 @@ static void read_file_comments(wchar_t const *filename, comment_display comment_
 
     /* process the file and read the comments */
     {
-        comment_count count = show_line_number ? read_comments_and_line(file_buffer, comment_mode) : read_comments(file_buffer, comment_mode);
+        comment_count count = read_comments(file_buffer, show_line_number, comment_mode);
         if (display_comment_count) {
             if (comment_mode & CC_COMMENT_DISPLAY) {
                 WriteFile(L"stdout", stdout, "c++ style comments: ", 20, NULL, NULL);
@@ -435,6 +416,12 @@ static void read_file_comments(wchar_t const *filename, comment_display comment_
             if (comment_mode & ASM_COMMENT_DISPLAY) {
                 WriteFile(L"stdout", stdout, "asm style comments: ", 20, NULL, NULL);
                 output_number(count.asm_comment_count);
+                WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+            }
+
+            if (comment_mode & PYTHON_COMMENT_DISPLAY) {
+                WriteFile(L"stdout", stdout, "python style comments: ", 23, NULL, NULL);
+                output_number(count.python_comment_count);
                 WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
             }
         }
@@ -465,6 +452,7 @@ void __cdecl mainCRTStartup(void)
                                         [mode](the default mode auto): the different modes are \n\
                                         c++ style comments //(cc, cxx, cpp), \n\
                                         c style comments /**/ (c), \n\
+                                        python style comments (py), \n\
                                         asm style comments ;(asm), \n\
                                         c and c++ style comments /**/ //(c|c++), \n\
                                         auto which detects the comment style based on file extension(auto), \n\
@@ -495,8 +483,10 @@ void __cdecl mainCRTStartup(void)
         comment_mode op ASM_COMMENT_DISPLAY;                            \
     } else if (!lstrcmpiW(argv[i], L"c|c++")) {                         \
         comment_mode op C_AND_CC_COMMENT_DISPLAY;                       \
-    }  else if (!lstrcmpiW(argv[i], L"auto")) {                         \
+    } else if (!lstrcmpiW(argv[i], L"auto")) {                          \
         comment_mode op AUTO_COMMENT_DISPLAY;                           \
+    } else if(!lstrcmpiW(argv[i], L"py")) {                             \
+        comment_mode op PYTHON_COMMENT_DISPLAY;                         \
     } else if (!lstrcmpiW(argv[i], L"all")) {                           \
         comment_mode op ALL_COMMENT_DISPLAY;                            \
     } else {                                                            \
