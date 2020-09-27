@@ -1,8 +1,11 @@
 # comments
-a program that displays the comments found in a source file
+a program that displays all the comments found in a source code file
 
 # building
-to build the program run build.bat
+the requirements for building are visual studio
+
+to build the program you first need to run vcvars64.bat or vcvars32.bat in the command line
+then after that just run build.bat
 
 # Usage
 use `comments --help` to find out how to use the program
