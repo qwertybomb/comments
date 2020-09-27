@@ -182,7 +182,7 @@ static comment_count read_comments(char const *str, comment_display comment_mode
                     ++bytes_since_newline;
 
                     ++str;
-                    while (*str != '\0' && (*str != '\n' || (str[0] != '\r' && str[1] != '\n'))) {
+                    while (*str != '\0' && (*str != '\n' && (str[0] != '\r' && str[1] != '\n'))) {
                         WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
                         ++str;
                     }
@@ -339,15 +339,17 @@ static comment_count read_comments_and_line(char const *str, comment_display com
                     ++bytes_since_newline;
 
                     ++str;
-                    while (*str != '\0' && (*str != '\n' || (str[0] != '\r' && str[1] != '\n'))) {
-                        WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
-                        ++str;
-                        if (*str == '\n' || (str[0] == '\r' && str[1] == '\n')) {
+                    while (*str != '\0') {
+                        if (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
                             WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                             output_number(newline_count);
 
                             ++newline_count;
+                            break;
                         }
+
+                        WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+                        ++str;
                     }
 
                     WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
@@ -388,17 +390,17 @@ static void read_file_comments(wchar_t const *filename, comment_display comment_
         comment_count count = show_line_number ? read_comments_and_line(file_buffer, comment_mode) : read_comments(file_buffer, comment_mode);
         if (display_comment_count) {
             if (comment_mode & CC_COMMENT_DISPLAY) {
-                WriteFile(L"stdout", stdout, "c++ style comments: ", 20, NULL, NULL);
+                WriteFile(L"stdout", stdout, "c++ style comments: \r\n", 22, NULL, NULL);
                 output_number(count.cc_comment_count);
             }
 
             if (comment_mode & C_COMMENT_DISPLAY) {
-                WriteFile(L"stdout", stdout, "\r\nc style comments: ", 20, NULL, NULL);
+                WriteFile(L"stdout", stdout, "c style comments: \r\n", 20, NULL, NULL);
                 output_number(count.c_comment_count);
             }
 
             if (comment_mode & ASM_COMMENT_DISPLAY) {
-                WriteFile(L"stdout", stdout, "\r\nasm style comments: ", 22, NULL, NULL);
+                WriteFile(L"stdout", stdout, "asm style comments: \r\n", 22, NULL, NULL);
                 output_number(count.asm_comment_count);
             }
         }
@@ -418,16 +420,18 @@ static bool is_file(wchar_t const *filepath)
 /* TODO: consider supporting python style comments #*/
 void __cdecl mainCRTStartup(void)
 {
-    static wchar_t const *help_message = L"Usage: comments [-l or --line] [-nl or --no_line] [-e [mode] or --enable=[mode]] [-m [mode] or --mode=[mode]] [-d [mode] or --disable=[mode]] [--display_comment_count or -dcc] [--hide_comment_count -hcc] file1 ...\n\
-                                      -l or --line(disabled by default): makes it so the program shows the line number of each comment\n\
-                                      -nl or --no_line: has the oppsite effect of -l\n\
-                                      -e [mode] or --enable=[mode]: enables the comment mode to [mode] for example -e asm enables asm comments\n\
-                                      -m [mode] or --mode=[mode]: sets the comment mode  to [mode] for example -m asm only allows only asm comments\n\
-                                      -d [mode] or --disable=[mode]: disables the comment mode to [mode] for example -d asm disables asm comments\n\
-                                      [mode](the default mode is c and c++): the different modes are c++ style comments //(cc, cxx, cpp), c style comments /**/ (c), asm style comments ;(asm), default /**/ //(default), and all which enables all the available comments(all) \n\
-                                      -dcc or --display_comment_count(enabled by defualt): displays the amount of comments found \n\
-                                      -hcc or --hides_comment_count: hides the amount of comments found \n\
-                                     ";
+    static wchar_t const *help_message = L"Usage: comments [--help] [-l or --line] [-nl or --no_line] [-e [mode] or --enable=[mode]] [-m [mode] or --mode=[mode]] [-d [mode] or --disable=[mode]] [--display_comment_count or -dcc] [--hide_comment_count -hcc] file1 ...\n\
+                                         Flags: \n\
+                                        --help: displays this message \n\
+                                        -l or --line(disabled by default): makes it so the program shows the line number of each comment\n\
+                                        -nl or --no_line: has the oppsite effect of -l\n\
+                                        -e [mode] or --enable=[mode]: enables the comment mode to [mode] for example -e asm enables asm comments\n\
+                                        -m [mode] or --mode=[mode]: sets the comment mode  to [mode] for example -m asm only allows only asm comments\n\
+                                        -d [mode] or --disable=[mode]: disables the comment mode to [mode] for example -d asm disables asm comments\n\
+                                        [mode](the default mode is c and c++): the different modes are c++ style comments //(cc, cxx, cpp), c style comments /**/ (c), asm style comments ;(asm), default /**/ //(default), and all which enables all the available comments(all) \n\
+                                        -dcc or --display_comment_count(enabled by defualt): displays the amount of comments found \n\
+                                        -hcc or --hides_comment_count: hides the amount of comments found \n\
+                                        ";
     stdout = GetStdHandle(STD_OUTPUT_HANDLE);
     stderr = GetStdHandle(STD_ERROR_HANDLE);
 
