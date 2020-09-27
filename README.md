@@ -17,3 +17,5 @@ for example `comments -l -hcc comments.c` will display each c/c++ comment in com
 - asm
 - c
 - c++
+- java
+- go
