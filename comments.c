@@ -96,7 +96,7 @@ static comment_display get_comment_mode(wchar_t const *str)
     
     /* find location of the file extension */
     {
-        wchar_t *temp_pos = NULL;
+        wchar_t const *temp_pos = NULL;
         while (*file_extension_pos != '\0') {
             if (*file_extension_pos == '.') {
                 temp_pos = file_extension_pos;
@@ -127,7 +127,7 @@ static comment_count read_comments(char const *str, bool show_lines, comment_dis
     comment_count result = { 0 };
 
     /* keep reading the next char until we reach a null terminator*/
-    size_t bytes_since_newline = 0;
+    size_t bytes_since_newline = 1;
     size_t newline_count = 1;
     while (*str != '\0') {
         switch (*str) {
