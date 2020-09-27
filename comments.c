@@ -94,7 +94,7 @@ static comment_display get_comment_mode(wchar_t const *str)
 {
     wchar_t const *file_extension_pos = str;
     
-    /* find location of the file extension */
+    /* find location of the file extension in the string */
     {
         wchar_t const *temp_pos = NULL;
         while (*file_extension_pos != '\0') {
@@ -111,7 +111,6 @@ static comment_display get_comment_mode(wchar_t const *str)
         file_extension_pos = temp_pos;
     }
 
-    /* assembly */
     if (!lstrcmpiW(file_extension_pos, L".asm") || !lstrcmpiW(file_extension_pos, L".s")) {
         return ASM_COMMENT_DISPLAY;
     } else if (!lstrcmpiW(file_extension_pos, L".py")) {
@@ -439,7 +438,6 @@ static bool is_file(wchar_t const *filepath)
     return (result & ~FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
-/* TODO: consider supporting python style comments #*/
 void __cdecl mainCRTStartup(void)
 {
     static wchar_t const *help_message = L"Usage: comments [--help] [-l or --line] [-nl or --no_line] [-e [mode] or --enable=[mode]] [-m [mode] or --mode=[mode]] [-d [mode] or --disable=[mode]] [--display_comment_count or -dcc] [--hide_comment_count -hcc] file1 ...\n\
