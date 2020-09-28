@@ -23,7 +23,8 @@ typedef enum comment_display
     CC_COMMENT_DISPLAY = C_COMMENT_DISPLAY << 1,
     ASM_COMMENT_DISPLAY = CC_COMMENT_DISPLAY << 1,
     PYTHON_COMMENT_DISPLAY = ASM_COMMENT_DISPLAY << 1,
-    AUTO_COMMENT_DISPLAY = PYTHON_COMMENT_DISPLAY << 1,
+    RUST_COMMENT_DISPLAY = PYTHON_COMMENT_DISPLAY << 1,
+    AUTO_COMMENT_DISPLAY = RUST_COMMENT_DISPLAY << 1,
     C_AND_CC_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY,
     ALL_COMMENT_DISPLAY = C_COMMENT_DISPLAY | CC_COMMENT_DISPLAY | ASM_COMMENT_DISPLAY
 } comment_display;
@@ -41,6 +42,9 @@ typedef struct comment_count
 
     /* python comment count */
     size_t python_comment_count;
+
+    /* rust comment count */
+    size_t rust_comment_count;
 } comment_count;
 
 static void output_number(size_t number)
@@ -139,6 +143,8 @@ static comment_display get_comment_mode(wchar_t const *str)
         return ASM_COMMENT_DISPLAY;
     } else if (!lstrcmpiW(file_extension_pos, L".py")) {
         return PYTHON_COMMENT_DISPLAY;
+    } else if (!lstrcmpiW(file_extension_pos, L".rs")) {
+        return RUST_COMMENT_DISPLAY;
     } else {
         return C_AND_CC_COMMENT_DISPLAY;
     }
@@ -237,14 +243,27 @@ static comment_count read_comments(char const *str, bool show_lines, comment_dis
                 switch (*str) {
                     case '/':
                         ++result.cc_comment_count;
-                        if ((comment_mode & CC_COMMENT_DISPLAY)) {
+                        ++result.rust_comment_count;
+                        if ((comment_mode & RUST_COMMENT_DISPLAY) || (comment_mode & CC_COMMENT_DISPLAY)) {
 
                             /* add space before comment*/
                             do {
                                 WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                             } while (bytes_since_newline-- != 0);
                             ++bytes_since_newline;
-                            ++str;
+                            
+                            if (RUST_COMMENT_DISPLAY & comment_mode) {
+                                if (str[1] == '!') {
+                                    str += 2;
+                                } else if (str[1] == '/') {
+                                    WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                    str += str[2] == '!' ? 3 : 2;
+                                } else {
+                                    ++str;
+                                }
+                            } else {
+                                ++str;
+                            }
                             while (*str != '\0') {
 
                                 /* stop when we reach the end of the line */
@@ -288,16 +307,67 @@ static comment_count read_comments(char const *str, bool show_lines, comment_dis
                         break;
 
                     case '*':
-                        ++result.c_comment_count;
-                        if ((comment_mode & C_COMMENT_DISPLAY)) {
+                        if (comment_mode & RUST_COMMENT_DISPLAY) {
+                            ++result.rust_comment_count;
                             /* add space before comment */
                             do {
                                 WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
                             } while (bytes_since_newline-- != 0);
                             ++bytes_since_newline;
 
-                            ++str;
+                            size_t bracket_count = 1;
+                            str += str[1] == '!' ? 2 : 1;
+                            while (*str != '\0' && bracket_count != 0) {
+                                while (str[0] == '/' && str[1] == '*') {
+                                    str += str[2] == '!' ? 4 : 3;
+                                    ++bracket_count;
+                                }
+
+                                if (str[0] == '*' && str[1] == '/') {
+                                    if (show_lines) {
+                                        WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                        output_number(newline_count);
+                                    }
+
+                                    ++str;
+                                    if (str[1] == '\n' || (str[1] == '\r' && str[2] == '\n')) {
+                                        WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+
+                                        str += str[0] == '\n' ? 1 : 2;
+                                        ++newline_count;
+                                    }
+                                    --bracket_count;
+                                } else {
+                                    if (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
+                                        if (show_lines) {
+                                            /* output a number before the end of the line */
+                                            WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                                            output_number(newline_count);
+                                        }
+
+                                        WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+
+                                        str += str[0] == '\n' ? 0 : 1;
+                                        ++newline_count;
+                                    } else {
+
+                                        WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
+                                    }
+                                }
+                                ++str;
+                            }
+
+                            WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+                        } else if ((comment_mode & C_COMMENT_DISPLAY)) {
+                            ++result.c_comment_count;
+                            /* add space before comment */
+                            do {
+                                WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
+                            } while (bytes_since_newline-- != 0);
+                            ++bytes_since_newline;
+
                             while (*str != '\0') {
+                                ++str;
                                 if (str[0] == '*' && str[1] == '/') {
                                     if (show_lines) {
                                         WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
@@ -312,10 +382,7 @@ static comment_count read_comments(char const *str, bool show_lines, comment_dis
                                     break;
                                 }
 
-                                WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
-
-                                ++str;
-                                while (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
+                                if (str[0] == '\n' || (str[0] == '\r' && str[1] == '\n')) {
                                     if (show_lines) {
                                         /* output a number before the end of the line */
                                         WriteFile(L"stdout", stdout, " ", 1, NULL, NULL);
@@ -324,8 +391,10 @@ static comment_count read_comments(char const *str, bool show_lines, comment_dis
 
                                     WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
 
-                                    str += str[0] == '\n' ? 1 : 2;
+                                    str += str[0] == '\n' ? 0 : 1;
                                     ++newline_count;
+                                } else {
+                                    WriteFile(L"stdout", stdout, str, 1, NULL, NULL);
                                 }
                             }
 
@@ -444,6 +513,12 @@ static void read_file_comments(wchar_t const *filename, comment_display comment_
                 WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
             }
 
+            if (comment_mode & RUST_COMMENT_DISPLAY) {
+                WriteFile(L"stdout", stdout, "rust style comments: ", 21, NULL, NULL);
+                output_number(count.rust_comment_count);
+                WriteFile(L"stdout", stdout, "\r\n", 2, NULL, NULL);
+            }
+
             if (comment_mode & ASM_COMMENT_DISPLAY) {
                 WriteFile(L"stdout", stdout, "asm style comments: ", 20, NULL, NULL);
                 output_number(count.asm_comment_count);
@@ -485,6 +560,7 @@ void __cdecl mainCRTStartup(void)
                                         python style comments (py), \n\
                                         asm style comments ;(asm), \n\
                                         c and c++ style comments /**/ //(c|c++), \n\
+                                        rust style comments which enables rust style comments /*/* comments can be nested */*/ // /// //!(rs), \n\
                                         auto which detects the comment style based on file extension(auto), \n\
                                         and all which enables all the available comment styles(all) \n\
                                         -dcc or --display_comment_count(enabled by defualt): displays the number of comments found \n\
@@ -503,25 +579,27 @@ void __cdecl mainCRTStartup(void)
     comment_display comment_mode = AUTO_COMMENT_DISPLAY;
 
     /* this makes it easier to add flags */
-#define FIND_ARG(op)                                                    \
-    if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")       \
-        || !lstrcmpiW(argv[i], L"cpp")) {                               \
-        comment_mode op CC_COMMENT_DISPLAY;                             \
-    } else if (!lstrcmpiW(argv[i], L"c")) {                             \
-        comment_mode op C_COMMENT_DISPLAY;                              \
-    } else if (!lstrcmpiW(argv[i], L"asm")) {                           \
-        comment_mode op ASM_COMMENT_DISPLAY;                            \
-    } else if (!lstrcmpiW(argv[i], L"c|c++")) {                         \
-        comment_mode op C_AND_CC_COMMENT_DISPLAY;                       \
-    } else if (!lstrcmpiW(argv[i], L"auto")) {                          \
-        comment_mode op AUTO_COMMENT_DISPLAY;                           \
-    } else if(!lstrcmpiW(argv[i], L"py")) {                             \
-        comment_mode op PYTHON_COMMENT_DISPLAY;                         \
-    } else if (!lstrcmpiW(argv[i], L"all")) {                           \
-        comment_mode op ALL_COMMENT_DISPLAY;                            \
-    } else {                                                            \
-        error_messagew(L"Error: invalid arguments\n", help_message);    \
-    }                                                                   \
+#define FIND_ARG(op)                                                        \
+    if (!lstrcmpiW(argv[i], L"cc") || !lstrcmpiW(argv[i], L"cxx")           \
+        || !lstrcmpiW(argv[i], L"cpp")) {                                   \
+        comment_mode op CC_COMMENT_DISPLAY;                                 \
+    } else if (!lstrcmpiW(argv[i], L"c")) {                                 \
+        comment_mode op C_COMMENT_DISPLAY;                                  \
+    } else if (!lstrcmpiW(argv[i], L"asm")) {                               \
+        comment_mode op ASM_COMMENT_DISPLAY;                                \
+    } else if (!lstrcmpiW(argv[i], L"c|c++")) {                             \
+        comment_mode op C_AND_CC_COMMENT_DISPLAY;                           \
+    } else if (!lstrcmpiW(argv[i], L"auto")) {                              \
+        comment_mode op AUTO_COMMENT_DISPLAY;                               \
+    } else if(!lstrcmpiW(argv[i], L"py")) {                                 \
+        comment_mode op PYTHON_COMMENT_DISPLAY;                             \
+    } else if(!lstrcmpiW(argv[i], L"rs")) {                                 \
+        comment_mode op (RUST_COMMENT_DISPLAY);                             \
+    } else if (!lstrcmpiW(argv[i], L"all")) {                               \
+        comment_mode op ALL_COMMENT_DISPLAY;                                \
+    } else {                                                                \
+        error_messagew(L"Error: invalid arguments\n", help_message);        \
+    }                                                                       \
 
     /* parse command line args */
     for (int i = 0; i < argc; ++i) {
