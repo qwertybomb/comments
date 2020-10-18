@@ -15,8 +15,8 @@ __declspec(noreturn) static void error_messagea(size_t count, char const **messa
     ExitProcess(GetLastError());
 }
 
-#define error_messagew(...) error_messagea(sizeof((char const*[]){__VA_ARGS__}) / sizeof(char const *), (char const*[]){__VA_ARGS__})
-#define WriteFile(filepath, ...) if(!WriteFile(__VA_ARGS__)) { error_messagew("Error could not write to ", filepath); }
+#define error_messagea(...) error_messagea(sizeof((char const*[]){__VA_ARGS__}) / sizeof(char const *), (char const*[]){__VA_ARGS__})
+#define WriteFile(filepath, ...) if(!WriteFile(__VA_ARGS__)) { error_messagea("Error could not write to ", filepath); }
 
 typedef enum comment_display
 {
@@ -504,13 +504,13 @@ static void read_file_comments(char const *filename, comment_display comment_mod
 
     HANDLE file_handle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN | FILE_ATTRIBUTE_NORMAL, NULL);
     if (file_handle == INVALID_HANDLE_VALUE) {
-        error_messagew("Error: could not open file \"", filename, "\"");
+        error_messagea("Error: could not open file \"", filename, "\"");
     }
 
     /* get the file size */
     LARGE_INTEGER file_size;
     if (GetFileSizeEx(file_handle, &file_size) == FALSE) {
-        error_messagew("Error: could not get the file size of \"", filename, "\\");
+        error_messagea("Error: could not get the file size of \"", filename, "\\");
     }
 
     char *file_buffer = HeapAlloc(GetProcessHeap(), 0, file_size.QuadPart + 1);
@@ -519,7 +519,7 @@ static void read_file_comments(char const *filename, comment_display comment_mod
     /* read the file into the file buffer */
     DWORD bytes_read = 0;
     if (ReadFile(file_handle, file_buffer, file_size.LowPart, &bytes_read, NULL) == FALSE || bytes_read != file_size.QuadPart) {
-        error_messagew("Error: could not read ", filename);
+        error_messagea("Error: could not read ", filename);
     }
 
     /* process the file and read the comments */
@@ -627,7 +627,7 @@ void read_comments_in_directory(char const *input_path, comment_display comment_
             string_free(spec);
             string_free(path);
             HeapFree(GetProcessHeap(), 0, stack_base);
-            error_messagew("Error: FindFirstFileA failed");
+            error_messagea("Error: FindFirstFileA failed");
         }
 
         do {
@@ -656,7 +656,7 @@ void read_comments_in_directory(char const *input_path, comment_display comment_
 
         if (GetLastError() != ERROR_NO_MORE_FILES) {
             FindClose(find_handle);
-            error_messagew("Error: FindNextFileA failed");
+            error_messagea("Error: FindNextFileA failed");
         }
 
         FindClose(find_handle);
@@ -676,7 +676,7 @@ void read_comments_in_directory_non_recursive(char const *input_path, comment_di
     HANDLE find_handle = FindFirstFileA(spec.data, &file_find_data);
     if (find_handle == INVALID_HANDLE_VALUE) {
         string_free(spec);
-        error_messagew("Error: FindFirstFileA failed");
+        error_messagea("Error: FindFirstFileA failed");
     }
 
     string_t file_name = make_string(input_path);
@@ -755,7 +755,7 @@ void __cdecl mainCRTStartup(void)
     } else if (!lstrcmpiA(argv[i], "all")) {                                \
         comment_mode op ALL_COMMENT_DISPLAY;                                \
     } else {                                                                \
-        error_messagew("Error: invalid arguments\n", help_message);         \
+        error_messagea("Error: invalid arguments\n", help_message);         \
     }                                                                       \
 
     /* parse command line args */
@@ -772,7 +772,7 @@ void __cdecl mainCRTStartup(void)
                 recursive_directory_search = false;
             }
             else {
-                error_messagew("Error: invalid arguments\n", help_message);
+                error_messagea("Error: invalid arguments\n", help_message);
             }
         }
         else if (argv[i][0] == '-' && argv[i][1] == '-'
@@ -789,7 +789,7 @@ void __cdecl mainCRTStartup(void)
                 recursive_directory_search = false;
             }
             else {
-                error_messagew("Error: invalid arguments\n", help_message);
+                error_messagea("Error: invalid arguments\n", help_message);
             }
         }
         else if (!lstrcmpA(argv[i], "--no_line") || !lstrcmpA(argv[i], "-nl")) {
@@ -850,7 +850,7 @@ void __cdecl mainCRTStartup(void)
             }
         }
         else {
-            error_messagew("Error: invalid arguments\n", help_message);
+            error_messagea("Error: invalid arguments\n", help_message);
         }
     }
 
