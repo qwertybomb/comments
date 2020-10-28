@@ -62,7 +62,7 @@ static void output_number(size_t number)
     }
 
     /* reverse the reversed digets of the number */
-    for (int j = 0; j < i - 1; ++j) {
+    for (int j = 0; j < i / 2; ++j) {
         char temp_digit = digits[j];
         digits[j] = digits[i - 1 - j];
         digits[i - 1 - j] = temp_digit;
